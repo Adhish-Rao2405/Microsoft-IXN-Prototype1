@@ -1,0 +1,174 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf-8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{setspace}
+\usepackage[style=ieee]{biblatex}
+
+\onehalfspacing
+\title{Specification-Driven Development of an LLM-Based Robot Task Planner: \\
+Integration of Structured Action Planning with PyBullet Simulation}
+\author{Author Name}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This dissertation presents a compact embodied AI system that links natural-language task requests to robot manipulation via constrained tool invocation rather than free-form code generation. The implemented platform combines a Franka Panda arm in PyBullet, local LLM inference through Foundry Local (OpenAI-compatible endpoint), and a strict JSON action interface with schema validation and safety clamping. Development followed a specification-driven workflow supported by GitHub Copilot, where requirements, architecture, and task decomposition were defined prior to implementation. The resulting pipeline separates planning from execution: the LLM proposes actions, while deterministic robot modules enforce kinematic feasibility and safety limits. Preliminary evaluation indicates successful command execution for pick, place, move end-effector, gripper control, and scene description, with a debug bypass enabling direct action execution independent of LLM connectivity. The analysis remains preliminary and is presented as an engineering validation rather than a benchmark study.
+\end{abstract}
+
+\section{Introduction}
+
+Large language models are increasingly used as high-level planners for embodied systems; however, unconstrained output remains unsuitable for safety-critical actuation. In robot manipulation, even semantically plausible but numerically unsafe commands can lead to collisions, unstable grasps, or controller faults. This project therefore treats the LLM as a planner of 
+\emph{structured actions}, not as a generator of executable control code.
+
+The work contributes a practical architecture and development process for this paradigm. First, planning and execution are explicitly decoupled. Second, all LLM outputs are constrained to a fixed JSON schema. Third, a validation stack (schema, semantic, and safety checks) gates every action before execution. Fourth, implementation is driven by specification artefacts and AI-assisted coding, enabling rapid iteration while preserving traceability from requirement to module.
+
+The implemented system supports command-driven manipulation in simulation: pick, place, end-effector motion, gripper control, and scene reporting. It also introduces a direct-command debug path that bypasses the LLM, enabling independent verification of robot control when local inference endpoints are unavailable.
+
+\section{Background and Related Work}
+
+\subsection{LLMs in Robotics}
+
+LLM-enabled robotics typically frames language understanding as symbolic planning: a model maps human intent to task steps, while downstream controllers realise motion [REF]. This abstraction is powerful for compositional tasks but fragile when model outputs are unconstrained. Current literature highlights recurrent issues: non-deterministic outputs, hallucinated tools, and inconsistent parameter formats [REF].
+
+\subsection{Tool Use and Structured Outputs}
+
+Structured output mechanisms (function calling, tool schemas, constrained JSON) reduce these risks by narrowing output space to valid operations [REF]. In robotics, this approach provides two benefits: (i) syntactic reliability, because outputs are parseable and type-checked; and (ii) controllability, because only approved primitives can be invoked. The present project adopts this tool-constrained strategy as a core safety principle.
+
+\subsection{Embodied AI and the Planning-Execution Separation}
+
+The planner--executor split is well established in robotics [REF]. LLM-era systems reinterpret this split by using language models for symbolic sequencing and deterministic controllers for geometric feasibility, timing, and actuation [REF]. The architecture in this dissertation follows that design, with explicit gating between layers.
+
+\section{System Architecture}
+
+The system is implemented as a five-layer pipeline:
+
+\begin{enumerate}
+\item \textbf{Presentation Layer}: Command-line interface (REPL) accepting natural-language or debug commands.
+\item \textbf{Planning Layer}: Foundry Local LLM client that sends prompts (user command + scene state) to the local inference endpoint and retrieves JSON action sequences.
+\item \textbf{Validation and Safety Layer}: Multi-stage processor that (a) parses JSON strictly, (b) validates against action schema, (c) checks semantic constraints (e.g., object existence), and (d) applies workspace and actuator safety clamps.
+\item \textbf{Execution Layer}: Action dispatcher that maps validated actions to high-level manipulation primitives (pick, place, move end-effector, gripper control).
+\item \textbf{Simulation Layer}: PyBullet controller managing the Panda robot arm, gripper, scene objects, inverse kinematics, smooth joint interpolation, and physics stepping.
+\end{enumerate}
+
+\subsection*{Textual Pipeline Description}
+At runtime, a user command enters the CLI. If it matches a predefined debug command (e.g., \texttt{pick up cube}, \texttt{reset}, \texttt{describe scene}), the command is mapped directly to internal actions and executed without LLM involvement. Otherwise, the planner path is used: scene state is captured from PyBullet, prompt messages are constructed, and a request is sent to Foundry Local at \texttt{POST /v1/chat/completions} using \texttt{max\_completion\_tokens}. The response is parsed as strict JSON, validated against the action schema, safety-clamped, then dispatched to motion/gripper primitives. Each action returns structured success or error metadata to the CLI.
+
+\section{Methodology}
+
+Development followed a specification-driven process:
+
+\begin{enumerate}
+\item \textbf{Specification}: requirements were formalised as user stories, acceptance criteria, and edge cases.
+\item \textbf{Planning}: architecture, modules, safety policy, and data flow were documented before coding.
+\item \textbf{Tasking}: implementation was decomposed into small, testable file-level tasks.
+\item \textbf{Copilot-assisted coding}: GitHub Copilot accelerated boilerplate and integration code; all outputs were reviewed and corrected manually.
+\item \textbf{Iterative debugging}: the grasp pipeline and endpoint reliability were tuned through targeted patches; a debug bypass was added to isolate execution-layer faults from planning-layer faults.
+\end{enumerate}
+
+This methodology improved traceability and reduced integration risk by allowing independent validation of planning, validation, and control subsystems.
+
+\section{Implementation}
+
+\subsection{PyBullet Simulation and Robot Control}
+
+The simulator initialises a plane, table, Franka Panda URDF, and a single cube. Arm control uses position control on seven joints. End-effector goals are converted to joint targets via \texttt{calculateInverseKinematics}, then executed through smooth joint interpolation with bounded step size. Gripper actuation uses symmetric position control on both finger joints with configurable force.
+
+The pick routine is implemented as a deterministic sequence:
+\begin{enumerate}
+\item Query cube world pose via \texttt{getBasePositionAndOrientation}.
+\item Move above cube with downward tool orientation.
+\item Descend to grasp height.
+\item Close gripper with high force and settle simulation steps.
+\item Verify contact; if present, attach via fixed constraint.
+\item Lift vertically and verify success from cube-height increase/contact state.
+\end{enumerate}
+
+\subsection{Foundry Local Integration}
+
+The LLM client targets Foundry Local's OpenAI-compatible endpoint at \texttt{/v1/chat/completions}, with base URL from \texttt{FOUNDRY\_LOCAL\_BASE\_URL} (and alias \texttt{FOUNDY\_LOCAL\_BASE\_URL}) defaulting to \texttt{http://127.0.0.1:8000}. Each request includes:
+\begin{itemize}
+\item Model identifier (\texttt{FOUNDRY\_LOCAL\_MODEL}).
+\item Messages array with system prompt (defining allowed actions, JSON-only constraint) and user prompt (command + scene state).
+\item Temperature set to 0 for stable outputs.
+\item \texttt{max\_completion\_tokens} (explicitly not \texttt{max\_tokens}).
+\item Response format specification as JSON schema.
+\end{itemize}
+
+Connection handling includes full URL logging, one retry on connection/timeout error, and clear diagnostics when the endpoint is unavailable.
+
+\subsection{Action Schema and Validation}
+
+Seven tool actions are encoded as strict Pydantic models:
+\begin{itemize}
+\item \texttt{describe\_scene}: no parameters.
+\item \texttt{move\_ee}: Cartesian target (xyz) and orientation (roll-pitch-yaw) and speed.
+\item \texttt{open\_gripper}: width parameter.
+\item \texttt{close\_gripper}: force parameter.
+\item \texttt{pick}: object name (currently only ``cube'' supported).
+\item \texttt{place}: Cartesian target.
+\item \texttt{reset}: no parameters.
+\end{itemize}
+
+Actions are wrapped in an \texttt{ActionEnvelope} with mandatory \texttt{actions}. Validation enforces:
+\begin{enumerate}
+\item structural schema correctness;
+\item semantic correctness (valid object references and argument completeness);
+\item safety constraints (workspace bounds, speed limits, gripper width/force limits).
+\end{enumerate}
+
+\section{Preliminary Evaluation}
+
+\subsection{Functional Verification}
+
+Preliminary functional checks show the system launches with \texttt{python -m src.app}, initialises the PyBullet scene, and executes debug commands deterministically:
+\begin{itemize}
+\item \texttt{reset}: restores initial state.
+\item \texttt{pick up cube}: executes pick sequence; cube height increases, indicating successful lift.
+\item \texttt{describe scene}: returns current robot and object poses.
+\item \texttt{open gripper} / \texttt{close gripper}: control gripper width/force.
+\end{itemize}
+
+Cube pickup succeeds repeatedly in simulation under tuned parameters. The debug bypass materially improves diagnosability by isolating control-layer behaviour from endpoint availability.
+
+\subsection{LLM Integration Validation}
+
+With Foundry Local active, natural-language commands are transformed into JSON action sequences and executed through the validated pipeline. Connection diagnostics and retry behaviour assist with endpoint troubleshooting.
+
+\subsection{Safety and Failure Modes}
+
+Out-of-range Cartesian and gripper parameters are clamped before execution. Invalid action names and malformed JSON are rejected upstream. No action bypasses schema and safety checks.
+
+\section{Discussion}
+
+\subsection{Strengths}
+
+Specification-first engineering with Copilot support enabled fast implementation without losing requirement traceability. The planner--validator--executor partition and strict action schema materially improve safety and reproducibility relative to free-form LLM outputs.
+
+\subsection{Limitations}
+
+Evaluation remains preliminary and non-statistical. Planning latency is incompatible with high-frequency reactive control. Scene understanding is snapshot-based rather than continuously perceived. Manipulation success depends on tuned parameters (approach height, grip force), and the current approach lacks tactile sensing, robust collision reasoning, and autonomous replanning after failure.
+
+\subsection{Specification-Driven Development Outcomes}
+
+Specification artefacts (requirements, plan, tasks) provided a stable backbone for Copilot-assisted iteration. In practice, this reduced regressions when introducing targeted changes (grasp tuning, endpoint handling) because modification scope remained explicit.
+
+\section{Conclusion and Future Work}
+
+This work demonstrates that LLM-based robot planning can be made practical in simulation when outputs are tool-constrained, validated, and separated from deterministic execution. The current evidence is preliminary but indicates that the architecture is operational for core manipulation tasks and robust enough for iterative development.
+
+Future work should focus on:
+\begin{enumerate}
+\item closed-loop perception and reactive replanning;
+\item richer task decomposition and recovery policies;
+\item systematic evaluation with quantitative metrics (success rate, latency, safety violations);
+\item transfer from simulation to physical Panda hardware.
+\end{enumerate}
+
+\end{document}
