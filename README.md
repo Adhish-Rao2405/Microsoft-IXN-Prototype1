@@ -133,3 +133,6 @@ No markdown, prose, or Python code is accepted. Invalid output is rejected and n
   - Ensure your local model supports structured JSON output and follows the action contract.
 - Robot does not pick cube
   - Retry command; physics can vary slightly. Use `reset` and run pickup again.
+
+# Microsoft-IXN-Prototype1
+Picking up a cube
