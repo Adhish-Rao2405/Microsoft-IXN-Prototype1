@@ -136,3 +136,27 @@ No markdown, prose, or Python code is accepted. Invalid output is rejected and n
 
 # Microsoft-IXN-Prototype1
 Picking up a cube
+
+## Dissertation Evidence Documentation
+
+Prototype 1 is documented as the local model-to-action feasibility layer of the UCL Microsoft IXN Foundry Local dissertation.
+
+Additional dissertation-facing documentation is available in:
+
+- `docs/dissertation_evidence/prototype1_feasibility_context.md`
+- `docs/dissertation_evidence/prototype1_io_contract.md`
+- `docs/dissertation_evidence/prototype1_limitations_and_downstream_link.md`
+- `docs/dissertation_evidence/prototype1_research_claim_boundary.md`
+- `docs/dissertation_evidence/prototype1_to_2_transition.md`
+
+Prototype 1 should be interpreted as a feasibility prototype. It establishes that local model outputs can be connected to an action-like task-planning workflow. It does not claim final safety, semantic correctness, execution eligibility, local-vs-cloud comparison, quantisation behaviour, production readiness or live resource profiling. Those concerns are addressed by later prototypes.
+
+## Prototype Sequence Context
+
+This repository represents Prototype 1 in a five-prototype dissertation sequence:
+
+1. Prototype 1 - local model-to-action feasibility.
+2. Prototype 2 / 2.1 - deterministic zero-trust safety architecture.
+3. Prototype 3 - benchmark and local model evaluation.
+4. Prototype 4 - execution-grounded safety and safety-latency frontier.
+5. Prototype 5 - final evidence orchestration and brief closure.
